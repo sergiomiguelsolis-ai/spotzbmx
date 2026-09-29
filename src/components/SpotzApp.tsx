@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Map, { AttributionControl, Layer, Marker, Source, type MapRef } from 'react-map-gl/maplibre';
+import Map, { Layer, Marker, Source, type MapRef } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { MAP_STYLES, MAPTILER_KEY, type MapStyleKey } from '@/lib/config';
 import {
@@ -12,6 +12,7 @@ import {
   ENSENADA_CENTER,
   insideEnsenada,
   RADIUS_OPTIONS,
+  streetViewUrl,
   type LatLng,
   type RadiusOption,
 } from '@/lib/geo';
@@ -21,6 +22,7 @@ import { SpotPin, UserDot } from './SpotPin';
 import { SpotSheet } from './SpotSheet';
 import { CreateSpotForm } from './CreateSpotForm';
 import { Sprocket } from './Sprocket';
+import { PlaceSearch } from './PlaceSearch';
 
 type GeoState = 'locating' | 'ok' | 'denied' | 'outside' | 'unsupported';
 type Mode = 'browse' | 'placing' | 'form';
@@ -152,13 +154,11 @@ function SpotzMap() {
     fitView();
   }, [map, spots, effectiveRadius, fitView]);
 
-  // ── Spots visibles ───────────────────────────────────────────
-  const visible = useMemo(() => {
-    if (effectiveRadius === 'all' || !userPos) return spots;
-    return spots.filter((s) => s.id === selectedId || distanceMeters(userPos, s) <= effectiveRadius);
-  }, [spots, effectiveRadius, userPos, selectedId]);
-
-  const hiddenCount = spots.length - visible.length;
+  // ── Conteo: todos los spots siempre se ven; el radio solo encuadra y cuenta los cercanos ──
+  const nearCount = useMemo(() => {
+    if (effectiveRadius === 'all' || !userPos) return spots.length;
+    return spots.filter((s) => distanceMeters(userPos, s) <= effectiveRadius).length;
+  }, [spots, effectiveRadius, userPos]);
   const now = Date.now();
 
   // ── Crear spot ───────────────────────────────────────────────
@@ -230,11 +230,6 @@ function SpotzMap() {
         attributionControl={false}
         onClick={() => mode === 'browse' && setSelectedId(null)}
       >
-        <AttributionControl
-          compact
-          position="top-right"
-        />
-
         {canUseRadius && effectiveRadius !== 'all' && userPos && (
           <Source id="radius" type="geojson" data={circlePolygon(userPos, effectiveRadius)}>
             <Layer id="radius-fill" type="fill" paint={{ 'fill-color': '#FFE600', 'fill-opacity': 0.05 }} />
@@ -249,7 +244,7 @@ function SpotzMap() {
         )}
 
         {mode === 'browse' &&
-          visible.map((s) => {
+          spots.map((s) => {
             const isNew = isNewSpot(s.created_at, now);
             return (
               <Marker
@@ -298,19 +293,21 @@ function SpotzMap() {
         </div>
       </header>
 
-      <a
-        href="https://www.maptiler.com"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="absolute right-4 top-[calc(max(1rem,env(safe-area-inset-top))+86px)] z-10 opacity-70 hover:opacity-100"
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="https://api.maptiler.com/resources/logo.svg" alt="MapTiler" width={67} height={20} />
-      </a>
+      {/* Créditos del mapa: requeridos por MapTiler y OpenStreetMap; integrados al estilo HUD */}
+      <div className="glass hud absolute left-4 top-[calc(max(1rem,env(safe-area-inset-top))+60px)] z-20 flex items-center gap-2 rounded-md px-2 py-1 text-[8.5px] tracking-[0.1em] text-muted">
+        <a href="https://www.maptiler.com" target="_blank" rel="noopener noreferrer" className="flex opacity-80 hover:opacity-100">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="https://api.maptiler.com/resources/logo.svg" alt="MapTiler" width={47} height={14} />
+        </a>
+        <span>
+          <a href="https://www.maptiler.com/copyright/" target="_blank" rel="noopener noreferrer" className="hover:text-chrome">© MapTiler</a>{' '}
+          <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer" className="hover:text-chrome">© OpenStreetMap</a>
+        </span>
+      </div>
 
       {/* ── Aviso / estado ─────────────────────────────────────── */}
       {(toast || loadError) && (
-        <div role="status" className="glass hud absolute left-1/2 top-[calc(max(1rem,env(safe-area-inset-top))+64px)] z-30 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 rounded-md px-3 py-2.5 text-center normal-case tracking-normal text-chrome">
+        <div role="status" className="glass hud absolute left-1/2 top-[calc(max(1rem,env(safe-area-inset-top))+96px)] z-30 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 rounded-md px-3 py-2.5 text-center normal-case tracking-normal text-chrome">
           <span className="font-sans text-[13px]">{toast ?? loadError}</span>
         </div>
       )}
@@ -322,13 +319,31 @@ function SpotzMap() {
             <SpotPin selected size={52} />
           </div>
           <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-black/60 blur-[1px]" />
+          <div className="pointer-events-none absolute inset-x-0 top-[calc(max(1rem,env(safe-area-inset-top))+96px)] z-30 flex justify-center px-4">
+            <PlaceSearch
+              onPick={(pos) => map?.flyTo({ center: pos, zoom: 18 })}
+              onError={flash}
+            />
+          </div>
           <div className="absolute inset-x-0 bottom-0 z-30 px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
             <div className="glass sheet-in mx-auto max-w-md space-y-3 rounded-xl p-4">
               <div>
                 <p className="hud text-volt">Paso 1 de 2</p>
                 <p className="display mt-1 text-lg leading-tight text-white">Coloca el pin</p>
-                <p className="mt-1 text-[13px] text-chrome/80">Mueve el mapa hasta que la punta quede justo en el spot.</p>
+                <p className="mt-1 text-[13px] text-chrome/80">
+                  Busca la dirección arriba o mueve el mapa hasta que la punta quede justo en el spot.
+                </p>
               </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const c = map?.getCenter();
+                  if (c) window.open(streetViewUrl({ lat: c.lat, lng: c.lng }), '_blank', 'noopener');
+                }}
+                className="hud w-full rounded-md border border-line py-2.5 text-chrome hover:border-volt hover:text-volt"
+              >
+                Revisar este punto en Street View ↗
+              </button>
               <div className="grid grid-cols-[auto_1fr] gap-2">
                 <button type="button" onClick={() => setMode(draftPos ? 'form' : 'browse')} className="btn-ghost">Cancelar</button>
                 <button type="button" onClick={confirmLocation} className="btn-volt">Confirmar ubicación</button>
@@ -342,22 +357,14 @@ function SpotzMap() {
       {mode === 'browse' && (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex items-end gap-2 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] md:pr-[max(1rem,calc(420px+2rem))]">
           <div className="pointer-events-auto flex min-w-0 flex-1 flex-col gap-2 md:max-w-md">
-          {hiddenCount > 0 && effectiveRadius !== 'all' && (
-            <button
-              type="button"
-              onClick={() => setRadius('all')}
-              className="glass hud self-start rounded-md px-3 py-2 text-chrome hover:text-volt"
-            >
-              <span className="text-volt">{hiddenCount}</span> {hiddenCount === 1 ? 'spot fuera' : 'spots fuera'} del radio · Ver todos
-            </button>
-          )}
           <div className="glass rounded-lg p-2">
             <div className="flex items-center justify-between px-1 pb-1.5">
               <span className="hud text-muted">
                 {geo === 'locating' ? 'Buscando tu ubicación…' : canUseRadius ? 'Radio' : 'Ubicación no disponible'}
               </span>
               <span className="hud font-bold text-chrome">
-                <span className="text-volt">{String(visible.length).padStart(2, '0')}</span> spots
+                <span className="text-volt">{String(nearCount).padStart(2, '0')}</span>{' '}
+                {effectiveRadius === 'all' ? 'spots' : 'cerca'}
               </span>
             </div>
             <div className="grid grid-cols-5 gap-1" role="radiogroup" aria-label="Radio de búsqueda">
