@@ -4,7 +4,8 @@ import { useState } from 'react';
 import type { SpotType } from '@/lib/types';
 import type { LatLng } from '@/lib/geo';
 import { compressImage } from '@/lib/image-client';
-import { CloseButton, ErrorNote, PhotoInput, TypePicker } from './ui';
+import { CloseButton, ErrorNote, MultiPhotoInput, TypePicker } from './ui';
+import { MAX_SPOT_PHOTOS } from '@/lib/validation';
 
 type Props = {
   position: LatLng;
@@ -15,7 +16,7 @@ type Props = {
 
 /** Paso 2 de "Nuevo spot": datos del spot (la ubicación ya se eligió en el mapa). */
 export function CreateSpotForm({ position, onChangeLocation, onCancel, onCreated }: Props) {
-  const [photo, setPhoto] = useState<File | null>(null);
+  const [photos, setPhotos] = useState<File[]>([]);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [types, setTypes] = useState<SpotType[]>([]);
@@ -27,7 +28,7 @@ export function CreateSpotForm({ position, onChangeLocation, onCancel, onCreated
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
-    if (!photo) return setError('La foto del spot es obligatoria.');
+    if (photos.length === 0) return setError('Agrega al menos una foto del spot.');
     if (name.trim().length < 2) return setError('Ponle nombre al spot.');
     if (description.trim().length < 5) return setError('Describe el spot (mínimo 5 caracteres).');
     if (types.length === 0) return setError('Elige al menos un tipo de spot.');
@@ -44,7 +45,7 @@ export function CreateSpotForm({ position, onChangeLocation, onCancel, onCreated
       fd.set('anonymous', String(anonymous));
       fd.set('created_by', anonymous ? '' : nick.trim());
       fd.set('website', String(new FormData(e.currentTarget).get('website') ?? ''));
-      fd.set('photo', await compressImage(photo));
+      for (const p of photos) fd.append('photo', await compressImage(p));
       const r = await fetch('/api/spots', { method: 'POST', body: fd });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error ?? 'No se pudo guardar el spot.');
@@ -83,7 +84,7 @@ export function CreateSpotForm({ position, onChangeLocation, onCancel, onCreated
           </button>
         </div>
 
-        <PhotoInput id="spot-photo" file={photo} onChange={setPhoto} />
+        <MultiPhotoInput id="spot-photos" files={photos} onChange={setPhotos} max={MAX_SPOT_PHOTOS} />
 
         <div>
           <label htmlFor="spot-name" className="label">Nombre *</label>

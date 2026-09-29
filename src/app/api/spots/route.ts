@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db, removePhotos, uploadPhoto } from '@/lib/supabase';
 import { fail } from '@/lib/api';
-import { coords, imageFile, optionalName, spotTypes, str, ValidationError } from '@/lib/validation';
+import { coords, imageFile, MAX_SPOT_PHOTOS, optionalName, spotTypes, str, ValidationError } from '@/lib/validation';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,7 +22,7 @@ export async function GET() {
 
 /** Crear spot (sin cuenta). multipart/form-data */
 export async function POST(req: Request) {
-  let uploadedPath: string | null = null;
+  const uploadedPaths: string[] = [];
   try {
     const form = await req.formData();
     // Honeypot anti-bots: campo invisible que las personas nunca llenan.
@@ -41,11 +41,18 @@ export async function POST(req: Request) {
     const cleanTypes = spotTypes(types);
     const { lat, lng } = coords(form.get('lat'), form.get('lng'));
     const created_by = form.get('anonymous') === 'true' ? null : optionalName(form.get('created_by'));
-    const photo = imageFile(form.get('photo'));
+    const rawPhotos = form.getAll('photo');
+    if (rawPhotos.length === 0) throw new ValidationError('La fotografía es obligatoria.');
+    if (rawPhotos.length > MAX_SPOT_PHOTOS) throw new ValidationError(`Máximo ${MAX_SPOT_PHOTOS} fotos por spot.`);
+    const photos = rawPhotos.map((p, i) => imageFile(p, `La foto ${i + 1}`));
 
     const spotId = crypto.randomUUID();
-    const up = await uploadPhoto(photo, `spots/${spotId}`);
-    uploadedPath = up.path;
+    const uploads = [];
+    for (const photo of photos) {
+      const up = await uploadPhoto(photo, `spots/${spotId}`);
+      uploadedPaths.push(up.path);
+      uploads.push(up);
+    }
 
     const { error: spotErr } = await db()
       .from('spots')
@@ -54,7 +61,9 @@ export async function POST(req: Request) {
 
     const { error: photoErr } = await db()
       .from('spot_photos')
-      .insert({ spot_id: spotId, storage_path: up.path, url: up.url, is_cover: true, source: 'creation' });
+      .insert(
+        uploads.map((up, i) => ({ spot_id: spotId, storage_path: up.path, url: up.url, is_cover: i === 0, source: 'creation' })),
+      );
     if (photoErr) {
       await db().from('spots').delete().eq('id', spotId);
       throw photoErr;
@@ -62,7 +71,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ id: spotId }, { status: 201 });
   } catch (err) {
-    if (uploadedPath && !(err instanceof ValidationError)) await removePhotos([uploadedPath]).catch(() => {});
+    if (uploadedPaths.length) await removePhotos(uploadedPaths).catch(() => {});
     return fail(err);
   }
 }

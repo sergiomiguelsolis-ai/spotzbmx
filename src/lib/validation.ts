@@ -4,6 +4,8 @@ import { insideEnsenada } from './geo';
 export class ValidationError extends Error {}
 
 export const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+/** Fotos permitidas al registrar un spot (la primera es la portada). */
+export const MAX_SPOT_PHOTOS = 3;
 const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
 export function str(v: FormDataEntryValue | unknown, field: string, min: number, max: number): string {

@@ -158,3 +158,78 @@ export function ErrorNote({ children }: { children: React.ReactNode }) {
     </p>
   );
 }
+
+/** Varias fotos (1 a `max`). La primera es la portada. */
+export function MultiPhotoInput({
+  id,
+  files,
+  onChange,
+  max,
+}: {
+  id: string;
+  files: File[];
+  onChange: (f: File[]) => void;
+  max: number;
+}) {
+  const input = useRef<HTMLInputElement>(null);
+  const [previews, setPreviews] = useState<string[]>([]);
+  useEffect(() => {
+    const urls = files.map((f) => URL.createObjectURL(f));
+    setPreviews(urls);
+    return () => urls.forEach((u) => URL.revokeObjectURL(u));
+  }, [files]);
+
+  function add(list: FileList | null) {
+    if (!list) return;
+    onChange([...files, ...Array.from(list)].slice(0, max));
+    if (input.current) input.current.value = '';
+  }
+
+  return (
+    <div>
+      <label htmlFor={id} className="label">
+        Fotos del spot * <span className="normal-case tracking-normal">(1 a {max} · la primera es la portada)</span>
+      </label>
+      <input
+        ref={input}
+        id={id}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/*"
+        multiple
+        className="sr-only"
+        onChange={(e) => add(e.target.files)}
+      />
+      <div className="grid grid-cols-3 gap-2">
+        {previews.map((src, i) => (
+          <div key={src} className="relative aspect-square overflow-hidden rounded-md border border-line bg-ink">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={src} alt={`Foto ${i + 1}`} className="h-full w-full object-cover" />
+            {i === 0 && (
+              <span className="hud absolute bottom-1 left-1 rounded-sm bg-volt px-1.5 py-0.5 text-[8.5px] font-bold text-ink">Portada</span>
+            )}
+            <button
+              type="button"
+              onClick={() => onChange(files.filter((_, j) => j !== i))}
+              aria-label={`Quitar foto ${i + 1}`}
+              className="absolute right-1 top-1 grid h-7 w-7 place-items-center rounded-full bg-ink/85 text-chrome hover:text-dead"
+            >
+              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" stroke="currentColor" strokeWidth="3" aria-hidden="true">
+                <path d="M6 6l12 12M18 6L6 18" />
+              </svg>
+            </button>
+          </div>
+        ))}
+        {files.length < max && (
+          <button
+            type="button"
+            onClick={() => input.current?.click()}
+            className="group flex aspect-square flex-col items-center justify-center gap-1.5 rounded-md border border-dashed border-line bg-ink text-muted transition hover:border-volt hover:text-chrome"
+          >
+            <CameraIcon className="h-6 w-6" />
+            <span className="text-[11px] font-bold uppercase tracking-wide">{files.length === 0 ? 'Agregar foto' : 'Otra foto'}</span>
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
