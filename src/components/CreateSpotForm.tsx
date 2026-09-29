@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { readDraft, saveDraft } from '@/lib/draft';
 import type { SpotType } from '@/lib/types';
 import type { LatLng } from '@/lib/geo';
 import { compressImage } from '@/lib/image-client';
@@ -17,11 +18,18 @@ type Props = {
 /** Paso 2 de "Nuevo spot": datos del spot (la ubicación ya se eligió en el mapa). */
 export function CreateSpotForm({ position, onChangeLocation, onCancel, onCreated }: Props) {
   const [photos, setPhotos] = useState<File[]>([]);
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [types, setTypes] = useState<SpotType[]>([]);
-  const [nick, setNick] = useState('');
-  const [anonymous, setAnonymous] = useState(false);
+  // Lo escrito se recupera del borrador si el navegador recargó (p. ej. al volver de Street View).
+  const [saved] = useState(() => readDraft()?.form ?? {});
+  const [name, setName] = useState(saved.name ?? '');
+  const [description, setDescription] = useState(saved.description ?? '');
+  const [types, setTypes] = useState<SpotType[]>(saved.types ?? []);
+  const [nick, setNick] = useState(saved.nick ?? '');
+  const [anonymous, setAnonymous] = useState(saved.anonymous ?? false);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => saveDraft({ form: { name, description, types, nick, anonymous } }), 400);
+    return () => window.clearTimeout(t);
+  }, [name, description, types, nick, anonymous]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

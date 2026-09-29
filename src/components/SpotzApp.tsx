@@ -23,6 +23,7 @@ import { SpotSheet } from './SpotSheet';
 import { CreateSpotForm } from './CreateSpotForm';
 import { Sprocket } from './Sprocket';
 import { PlaceSearch } from './PlaceSearch';
+import { clearDraft, readDraft, saveDraft, type Draft } from '@/lib/draft';
 
 type GeoState = 'locating' | 'ok' | 'denied' | 'outside' | 'unsupported';
 type Mode = 'browse' | 'placing' | 'form';
@@ -57,6 +58,22 @@ function SpotzMap() {
   const showLabels = zoom >= LABEL_MIN_ZOOM;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>('browse');
+  const modeRef = useRef<Mode>('browse');
+  modeRef.current = mode;
+  // Spot en progreso guardado (p. ej. al volver de Street View y que el navegador recargue):
+  // el modo y el pin se recuperan al instante; la cámara del mapa, en cuanto el mapa cargue.
+  const pendingCamera = useRef<Pick<Draft, 'center' | 'zoom'> | null>(null);
+  useEffect(() => {
+    const d = readDraft();
+    if (!d) return;
+    pendingCamera.current = { center: d.center, zoom: d.zoom };
+    const next: Mode = d.mode === 'form' && d.pin ? 'form' : 'placing';
+    modeRef.current = next;
+    setDraftPos(d.pin);
+    setMode(next);
+    flash('Recuperamos tu spot en progreso.');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [draftPos, setDraftPos] = useState<LatLng | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const firstFix = useRef(true);
@@ -144,19 +161,36 @@ function SpotzMap() {
     map.fitBounds(boxAround(userPos, effectiveRadius * 1.15), { padding: FIT_PADDING });
   }, [map, effectiveRadius, userPos, spots]);
 
+  // Llevar el mapa a donde estaba el pin en progreso en cuanto el mapa esté listo.
+  const didFitSpots = useRef(false);
   useEffect(() => {
+    const cam = pendingCamera.current;
+    if (!map || !cam) return;
+    pendingCamera.current = null;
+    didFitSpots.current = true;
+    map.jumpTo({ center: cam.center, zoom: cam.zoom });
+  }, [map]);
+
+  useEffect(() => {
+    // Nunca mover el mapa solo mientras el usuario coloca un pin o llena el formulario.
+    if (modeRef.current !== 'browse' || pendingCamera.current) return;
     fitView();
     // Solo cuando cambia el radio (incluye la primera ubicación: pasa de "todo" al radio elegido).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveRadius, map]);
 
   // Primera carga de spots en modo "toda la ciudad": encuadrarlos una vez.
-  const didFitSpots = useRef(false);
   useEffect(() => {
     if (!map || didFitSpots.current || spots.length === 0 || effectiveRadius !== 'all') return;
+    if (modeRef.current !== 'browse' || pendingCamera.current) return;
     didFitSpots.current = true;
     fitView();
   }, [map, spots, effectiveRadius, fitView]);
+
+  function snapshotView() {
+    const c = map?.getCenter();
+    return { center: c ? { lat: c.lat, lng: c.lng } : ENSENADA_CENTER, zoom: map?.getZoom() ?? 17.5 };
+  }
 
   // ── Conteo: todos los spots siempre se ven; el radio solo encuadra y cuenta los cercanos ──
   const nearCount = useMemo(() => {
@@ -169,7 +203,10 @@ function SpotzMap() {
   function startCreate() {
     setSelectedId(null);
     const start = userPos && insideEnsenada(userPos) ? userPos : (map?.getCenter() ?? ENSENADA_CENTER);
-    map?.flyTo({ center: start, zoom: Math.max(map.getZoom(), 17.5) });
+    const zoom = Math.max(map?.getZoom() ?? 0, 17.5);
+    map?.flyTo({ center: start, zoom });
+    clearDraft();
+    saveDraft({ mode: 'placing', center: { lat: start.lat, lng: start.lng }, zoom, pin: null });
     setMode('placing');
   }
 
@@ -179,15 +216,18 @@ function SpotzMap() {
     const c = { lat: center.lat, lng: center.lng };
     if (!insideEnsenada(c)) return flash('Por ahora SPOTZ solo acepta spots dentro de Ensenada.');
     setDraftPos(c);
+    saveDraft({ ...snapshotView(), mode: 'form', pin: c });
     setMode('form');
   }
 
   function editLocation() {
     if (draftPos) map?.flyTo({ center: draftPos, zoom: Math.max(map.getZoom(), 17.5) });
+    saveDraft({ mode: 'placing' });
     setMode('placing');
   }
 
   async function onCreated(id: string) {
+    clearDraft();
     await loadSpots();
     setMode('browse');
     setDraftPos(null);
@@ -234,6 +274,13 @@ function SpotzMap() {
         attributionControl={false}
         onClick={() => mode === 'browse' && setSelectedId(null)}
         onZoomEnd={(e) => setZoom(e.viewState.zoom)}
+        onMoveEnd={(e) => {
+          // Guardar dónde va el pin mientras se coloca, por si el navegador recarga la página.
+          if (modeRef.current === 'placing') {
+            const { latitude, longitude, zoom: z } = e.viewState;
+            saveDraft({ mode: 'placing', center: { lat: latitude, lng: longitude }, zoom: z });
+          }
+        }}
       >
         {canUseRadius && effectiveRadius !== 'all' && userPos && (
           <Source id="radius" type="geojson" data={circlePolygon(userPos, effectiveRadius)}>
@@ -344,18 +391,36 @@ function SpotzMap() {
                   Busca la dirección arriba o mueve el mapa hasta que la punta quede justo en el spot.
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  const c = map?.getCenter();
-                  if (c) window.open(streetViewUrl({ lat: c.lat, lng: c.lng }), '_blank', 'noopener');
+              <a
+                href={streetViewUrl(ENSENADA_CENTER)}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => {
+                  // El link apunta al punto actual del pin; antes se guarda el avance por si al volver se recarga.
+                  const v = snapshotView();
+                  saveDraft({ mode: 'placing', ...v });
+                  e.currentTarget.href = streetViewUrl(v.center);
                 }}
-                className="hud w-full rounded-md border border-line py-2.5 text-chrome hover:border-volt hover:text-volt"
+                className="hud block w-full rounded-md border border-line py-2.5 text-center text-chrome hover:border-volt hover:text-volt"
               >
                 Revisar este punto en Street View ↗
-              </button>
+              </a>
               <div className="grid grid-cols-[auto_1fr] gap-2">
-                <button type="button" onClick={() => setMode(draftPos ? 'form' : 'browse')} className="btn-ghost">Cancelar</button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (draftPos) {
+                      saveDraft({ mode: 'form', pin: draftPos });
+                      setMode('form');
+                    } else {
+                      clearDraft();
+                      setMode('browse');
+                    }
+                  }}
+                  className="btn-ghost"
+                >
+                  Cancelar
+                </button>
                 <button type="button" onClick={confirmLocation} className="btn-volt">Confirmar ubicación</button>
               </div>
             </div>
@@ -431,6 +496,7 @@ function SpotzMap() {
           position={draftPos}
           onChangeLocation={editLocation}
           onCancel={() => {
+            clearDraft();
             setMode('browse');
             setDraftPos(null);
           }}
