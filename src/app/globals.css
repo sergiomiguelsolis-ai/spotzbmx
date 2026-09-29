@@ -1,0 +1,88 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  height: 100%;
+  background: #0a0b0d;
+}
+
+@layer components {
+  /* Display: Archivo expandido, pesado — tipografía de calcomanía de cuadro BMX */
+  .display {
+    font-family: var(--font-archivo), system-ui, sans-serif;
+    font-stretch: 125%;
+    font-variation-settings: 'wdth' 125;
+    font-weight: 900;
+    letter-spacing: -0.01em;
+    text-transform: uppercase;
+  }
+  /* Etiquetas HUD tipo cámara (VX / timecode) */
+  .hud {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .glass {
+    background: rgba(19, 21, 25, 0.86);
+    backdrop-filter: blur(14px) saturate(1.2);
+    -webkit-backdrop-filter: blur(14px) saturate(1.2);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+  }
+  .field {
+    @apply w-full rounded-md border border-line bg-ink px-3 py-2.5 text-[15px] text-chrome placeholder:text-muted/70 outline-none transition focus:border-volt focus:ring-1 focus:ring-volt;
+  }
+  .btn-volt {
+    @apply inline-flex items-center justify-center gap-2 rounded-md bg-volt px-4 py-3 text-[13px] font-extrabold uppercase tracking-wider text-ink transition hover:brightness-110 active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-md border border-line bg-raise px-4 py-3 text-[13px] font-bold uppercase tracking-wider text-chrome transition hover:border-chrome/40 active:scale-[.98] disabled:opacity-50;
+  }
+  .label {
+    @apply hud mb-1.5 block text-muted;
+  }
+}
+
+/* Cinta de precaución — detalle de borde del sheet */
+.hazard {
+  background: repeating-linear-gradient(-45deg, #ffe600 0 8px, #0a0b0d 8px 16px);
+}
+
+@keyframes pulse-ring {
+  0% { transform: scale(0.6); opacity: 0.8; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+.pulse-ring { animation: pulse-ring 2s ease-out infinite; }
+
+@keyframes rec-blink { 50% { opacity: 0.2; } }
+.rec-blink { animation: rec-blink 1.2s steps(1) infinite; }
+
+@keyframes sheet-up { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+.sheet-in { animation: sheet-up 0.22s cubic-bezier(.2,.8,.2,1); }
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse-ring, .rec-blink, .sheet-in { animation: none; }
+}
+
+:focus-visible { outline: 2px solid #ffe600; outline-offset: 2px; }
+
+/* Créditos del mapa (requeridos por MapTiler/OpenStreetMap) en tono oscuro y discretos */
+.maplibregl-ctrl-attrib.maplibregl-compact {
+  background: rgba(19, 21, 25, 0.8) !important;
+  color: #80868f;
+  margin: 0 0 4px 4px !important;
+}
+.maplibregl-ctrl-attrib a { color: #d5d9df !important; }
+.maplibregl-ctrl-attrib-button { filter: invert(1); }
+.maplibregl-canvas { outline: none; }
+/* Créditos debajo del selector Mapa/Satélite, sin encimarse con el header */
+.maplibregl-ctrl-top-right {
+  top: calc(max(1rem, env(safe-area-inset-top)) + 52px) !important;
+  right: 6px !important;
+}
