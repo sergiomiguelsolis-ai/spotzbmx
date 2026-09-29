@@ -12,11 +12,14 @@ export function SpotPin({
   isNew = false,
   status = 'active',
   size = 44,
+  label,
 }: {
   selected?: boolean;
   isNew?: boolean;
   status?: SpotStatus;
   size?: number;
+  /** Nombre del spot; se recorta con "…" si es largo. Sin label, los nuevos llevan un punto amarillo. */
+  label?: string;
 }) {
   const h = Math.round(size * 1.27);
   return (
@@ -36,10 +39,19 @@ export function SpotPin({
       ) : (
         <PinSvg selected={selected} />
       )}
-      {isNew && status !== 'gone' && (
-        <span className="hud absolute -right-3 -top-1.5 rounded-sm bg-volt px-1 py-[1px] text-[8.5px] font-bold leading-none tracking-[0.08em] text-ink shadow">
-          Nuevo
+      {label ? (
+        <span
+          className={`hud pointer-events-none absolute bottom-full left-1/2 mb-1 block max-w-[128px] -translate-x-1/2 truncate whitespace-nowrap rounded-sm px-1.5 py-[3px] text-[9.5px] font-bold leading-none tracking-[0.06em] shadow-[0_2px_6px_rgba(0,0,0,.6)] ${
+            isNew && status !== 'gone' ? 'bg-volt text-ink' : 'border border-white/10 bg-ink/90 text-chrome'
+          }`}
+        >
+          {label}
         </span>
+      ) : (
+        isNew &&
+        status !== 'gone' && (
+          <span className="absolute -right-0.5 top-0 h-2.5 w-2.5 rounded-full border-2 border-ink bg-volt" aria-label="Nuevo" />
+        )
       )}
       {status === 'doubtful' && (
         <span className="absolute -left-0.5 top-0 h-2.5 w-2.5 rounded-full border-2 border-ink bg-warn" aria-label="Dudoso" />

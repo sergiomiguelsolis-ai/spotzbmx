@@ -35,6 +35,7 @@ const MAX_BOUNDS: [number, number, number, number] = [
   ENSENADA_BOUNDS.north + 0.06,
 ];
 const FIT_PADDING = { top: 90, bottom: 150, left: 24, right: 24 };
+const LABEL_MIN_ZOOM = 12.3;
 
 export function SpotzApp() {
   if (!MAPTILER_KEY) return <MissingKey />;
@@ -51,6 +52,9 @@ function SpotzMap() {
   const [geo, setGeo] = useState<GeoState>('locating');
   const [radius, setRadius] = useState<RadiusOption>(500);
   const [mapType, setMapType] = useState<MapStyleKey>('map');
+  // Los nombres de los pins se muestran solo al acercarse, para no saturar la vista de toda la ciudad.
+  const [zoom, setZoom] = useState(12.5);
+  const showLabels = zoom >= LABEL_MIN_ZOOM;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>('browse');
   const [draftPos, setDraftPos] = useState<LatLng | null>(null);
@@ -132,7 +136,7 @@ function SpotzMap() {
             [Math.min(...lngs), Math.min(...lats)],
             [Math.max(...lngs), Math.max(...lats)],
           ],
-          { padding: { top: 140, bottom: 190, left: 48, right: 48 }, maxZoom: 16 },
+          { padding: { top: 165, bottom: 190, left: 64, right: 64 }, maxZoom: 16 },
         );
       }
       return;
@@ -229,6 +233,7 @@ function SpotzMap() {
         touchPitch={false}
         attributionControl={false}
         onClick={() => mode === 'browse' && setSelectedId(null)}
+        onZoomEnd={(e) => setZoom(e.viewState.zoom)}
       >
         {canUseRadius && effectiveRadius !== 'all' && userPos && (
           <Source id="radius" type="geojson" data={circlePolygon(userPos, effectiveRadius)}>
@@ -259,7 +264,12 @@ function SpotzMap() {
                 }}
               >
                 <button type="button" aria-label={s.name} title={s.name} className="block">
-                  <SpotPin selected={s.id === selectedId} isNew={isNew} status={s.status} />
+                  <SpotPin
+                    selected={s.id === selectedId}
+                    isNew={isNew}
+                    status={s.status}
+                    label={showLabels || s.id === selectedId ? s.name : undefined}
+                  />
                 </button>
               </Marker>
             );
