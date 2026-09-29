@@ -117,11 +117,26 @@ function SpotzMap() {
   const fitView = useCallback(() => {
     if (!map) return;
     if (effectiveRadius === 'all' || !userPos) {
-      map.flyTo({ center: ENSENADA_CENTER, zoom: 12.5 });
+      // Toda la ciudad: encuadra todos los spots (o el centro de Ensenada si aún no hay).
+      if (spots.length === 0) {
+        map.flyTo({ center: ENSENADA_CENTER, zoom: 12.5 });
+      } else if (spots.length === 1) {
+        map.flyTo({ center: spots[0], zoom: 15 });
+      } else {
+        const lats = spots.map((p) => p.lat);
+        const lngs = spots.map((p) => p.lng);
+        map.fitBounds(
+          [
+            [Math.min(...lngs), Math.min(...lats)],
+            [Math.max(...lngs), Math.max(...lats)],
+          ],
+          { padding: { top: 140, bottom: 190, left: 48, right: 48 }, maxZoom: 16 },
+        );
+      }
       return;
     }
     map.fitBounds(boxAround(userPos, effectiveRadius * 1.15), { padding: FIT_PADDING });
-  }, [map, effectiveRadius, userPos]);
+  }, [map, effectiveRadius, userPos, spots]);
 
   useEffect(() => {
     fitView();
@@ -129,12 +144,21 @@ function SpotzMap() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveRadius, map]);
 
+  // Primera carga de spots en modo "toda la ciudad": encuadrarlos una vez.
+  const didFitSpots = useRef(false);
+  useEffect(() => {
+    if (!map || didFitSpots.current || spots.length === 0 || effectiveRadius !== 'all') return;
+    didFitSpots.current = true;
+    fitView();
+  }, [map, spots, effectiveRadius, fitView]);
+
   // ── Spots visibles ───────────────────────────────────────────
   const visible = useMemo(() => {
     if (effectiveRadius === 'all' || !userPos) return spots;
     return spots.filter((s) => s.id === selectedId || distanceMeters(userPos, s) <= effectiveRadius);
   }, [spots, effectiveRadius, userPos, selectedId]);
 
+  const hiddenCount = spots.length - visible.length;
   const now = Date.now();
 
   // ── Crear spot ───────────────────────────────────────────────
@@ -317,7 +341,17 @@ function SpotzMap() {
       {/* ── Controles inferiores ───────────────────────────────── */}
       {mode === 'browse' && (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex items-end gap-2 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] md:pr-[max(1rem,calc(420px+2rem))]">
-          <div className="glass pointer-events-auto min-w-0 flex-1 rounded-lg p-2 md:max-w-md">
+          <div className="pointer-events-auto flex min-w-0 flex-1 flex-col gap-2 md:max-w-md">
+          {hiddenCount > 0 && effectiveRadius !== 'all' && (
+            <button
+              type="button"
+              onClick={() => setRadius('all')}
+              className="glass hud self-start rounded-md px-3 py-2 text-chrome hover:text-volt"
+            >
+              <span className="text-volt">{hiddenCount}</span> {hiddenCount === 1 ? 'spot fuera' : 'spots fuera'} del radio · Ver todos
+            </button>
+          )}
+          <div className="glass rounded-lg p-2">
             <div className="flex items-center justify-between px-1 pb-1.5">
               <span className="hud text-muted">
                 {geo === 'locating' ? 'Buscando tu ubicación…' : canUseRadius ? 'Radio' : 'Ubicación no disponible'}
@@ -337,7 +371,10 @@ function SpotzMap() {
                     role="radio"
                     aria-checked={active}
                     disabled={disabled}
-                    onClick={() => setRadius(r)}
+                    onClick={() => {
+                      setRadius(r);
+                      if (r === effectiveRadius) fitView();
+                    }}
                     className={`rounded-md py-2 font-mono text-[12px] font-bold transition disabled:opacity-30 ${
                       active ? 'bg-volt text-ink' : 'bg-ink/60 text-chrome hover:bg-raise'
                     }`}
@@ -347,6 +384,7 @@ function SpotzMap() {
                 );
               })}
             </div>
+          </div>
           </div>
 
           <div className="pointer-events-auto flex shrink-0 flex-col gap-2">
